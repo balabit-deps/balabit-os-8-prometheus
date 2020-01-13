@@ -1,0 +1,269 @@
+Description: Fix prometheus invocations, paths for debian build system, and
+ avoid recompiling prometheus.
+Index: prometheus/cmd/prometheus/main_test.go
+===================================================================
+--- prometheus.orig/cmd/prometheus/main_test.go
++++ prometheus/cmd/prometheus/main_test.go
+@@ -31,8 +31,8 @@ import (
+ 	"github.com/prometheus/prometheus/util/testutil"
+ )
+ 
+-var promPath string
+-var promConfig = filepath.Join("..", "..", "documentation", "examples", "prometheus.yml")
++var promPath = filepath.Join(os.Getenv("GOPATH"), "bin", "prometheus")
++var promConfig = filepath.Join(os.Getenv("GOPATH"), "..", "documentation", "examples", "prometheus.yml")
+ var promData = filepath.Join(os.TempDir(), "data")
+ 
+ func TestMain(m *testing.M) {
+@@ -43,23 +43,16 @@ func TestMain(m *testing.M) {
+ 	// On linux with a global proxy the tests will fail as the go client(http,grpc) tries to connect through the proxy.
+ 	os.Setenv("no_proxy", "localhost,127.0.0.1,0.0.0.0,:")
+ 
+-	var err error
+-	promPath, err = os.Getwd()
+-	if err != nil {
+-		fmt.Printf("can't get current dir :%s \n", err)
+-		os.Exit(1)
+-	}
+-	promPath = filepath.Join(promPath, "prometheus")
+-
++        /*
+ 	build := exec.Command("go", "build", "-o", promPath)
+ 	output, err := build.CombinedOutput()
+ 	if err != nil {
+ 		fmt.Printf("compilation error :%s \n", output)
+ 		os.Exit(1)
+ 	}
++        */
+ 
+ 	exitCode := m.Run()
+-	os.Remove(promPath)
+ 	os.RemoveAll(promData)
+ 	os.Exit(exitCode)
+ }
+@@ -70,7 +63,7 @@ func TestStartupInterrupt(t *testing.T)
+ 		t.Skip("skipping test in short mode.")
+ 	}
+ 
+-	prom := exec.Command(promPath, "--config.file="+promConfig, "--storage.tsdb.path="+promData)
++	prom := exec.Command(promPath, "--config.file="+promConfig, "--storage.tsdb.path="+promData, "--web.listen-address=:9099")
+ 	err := prom.Start()
+ 	if err != nil {
+ 		t.Errorf("execution error: %v", err)
+@@ -88,7 +81,7 @@ func TestStartupInterrupt(t *testing.T)
+ Loop:
+ 	for x := 0; x < 10; x++ {
+ 		// error=nil means prometheus has started so can send the interrupt signal and wait for the grace shutdown.
+-		if _, err := http.Get("http://localhost:9090/graph"); err == nil {
++		if _, err := http.Get("http://localhost:9099/graph"); err == nil {
+ 			startedOk = true
+ 			prom.Process.Signal(os.Interrupt)
+ 			select {
+@@ -170,7 +163,7 @@ func TestFailedStartupExitCode(t *testin
+ 	fakeInputFile := "fake-input-file"
+ 	expectedExitStatus := 1
+ 
+-	prom := exec.Command(promPath, "--config.file="+fakeInputFile)
++	prom := exec.Command(promPath, "--config.file="+fakeInputFile, "--storage.tsdb.path="+promData, "--web.listen-address=:9099")
+ 	err := prom.Run()
+ 	testutil.NotOk(t, err)
+ 
+@@ -258,7 +251,7 @@ func TestWALSegmentSizeBounds(t *testing
+ 	}
+ 
+ 	for size, expectedExitStatus := range map[string]int{"9MB": 1, "257MB": 1, "10": 2, "1GB": 1, "12MB": 0} {
+-		prom := exec.Command(promPath, "--storage.tsdb.wal-segment-size="+size, "--config.file="+promConfig)
++		prom := exec.Command(promPath, "--storage.tsdb.wal-segment-size="+size, "--config.file="+promConfig, "--storage.tsdb.path="+promData, "--web.listen-address=:9099")
+ 		err := prom.Start()
+ 		testutil.Ok(t, err)
+ 
+Index: prometheus/web/web_test.go
+===================================================================
+--- prometheus.orig/web/web_test.go
++++ prometheus/web/web_test.go
+@@ -103,7 +103,7 @@ func TestReadyAndHealthy(t *testing.T) {
+ 	testutil.Ok(t, err)
+ 
+ 	opts := &Options{
+-		ListenAddress:  ":9090",
++		ListenAddress:  ":9099",
+ 		ReadTimeout:    30 * time.Second,
+ 		MaxConnections: 512,
+ 		Context:        nil,
+@@ -117,7 +117,7 @@ func TestReadyAndHealthy(t *testing.T) {
+ 		TSDB:           func() *libtsdb.DB { return db },
+ 		ExternalURL: &url.URL{
+ 			Scheme: "http",
+-			Host:   "localhost:9090",
++			Host:   "localhost:9099",
+ 			Path:   "/",
+ 		},
+ 		Version:  &PrometheusVersion{},
+@@ -143,72 +143,72 @@ func TestReadyAndHealthy(t *testing.T) {
+ 	// to be up before starting tests.
+ 	time.Sleep(5 * time.Second)
+ 
+-	resp, err := http.Get("http://localhost:9090/-/healthy")
++	resp, err := http.Get("http://localhost:9099/-/healthy")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+ 
+-	resp, err = http.Get("http://localhost:9090/-/ready")
++	resp, err = http.Get("http://localhost:9099/-/ready")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+ 
+-	resp, err = http.Get("http://localhost:9090/version")
++	resp, err = http.Get("http://localhost:9099/version")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+ 
+-	resp, err = http.Get("http://localhost:9090/graph")
++	resp, err = http.Get("http://localhost:9099/graph")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+ 
+-	resp, err = http.Post("http://localhost:9090/api/v2/admin/tsdb/snapshot", "", strings.NewReader(""))
++	resp, err = http.Post("http://localhost:9099/api/v2/admin/tsdb/snapshot", "", strings.NewReader(""))
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+ 
+-	resp, err = http.Post("http://localhost:9090/api/v2/admin/tsdb/delete_series", "", strings.NewReader("{}"))
++	resp, err = http.Post("http://localhost:9099/api/v2/admin/tsdb/delete_series", "", strings.NewReader("{}"))
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+ 
+-	resp, err = http.Get("http://localhost:9090/graph")
++	resp, err = http.Get("http://localhost:9099/graph")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+ 
+-	resp, err = http.Get("http://localhost:9090/alerts")
++	resp, err = http.Get("http://localhost:9099/alerts")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+ 
+-	resp, err = http.Get("http://localhost:9090/flags")
++	resp, err = http.Get("http://localhost:9099/flags")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+ 
+-	resp, err = http.Get("http://localhost:9090/rules")
++	resp, err = http.Get("http://localhost:9099/rules")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+ 
+-	resp, err = http.Get("http://localhost:9090/service-discovery")
++	resp, err = http.Get("http://localhost:9099/service-discovery")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+ 
+-	resp, err = http.Get("http://localhost:9090/targets")
++	resp, err = http.Get("http://localhost:9099/targets")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+ 
+-	resp, err = http.Get("http://localhost:9090/config")
++	resp, err = http.Get("http://localhost:9099/config")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+ 
+-	resp, err = http.Get("http://localhost:9090/status")
++	resp, err = http.Get("http://localhost:9099/status")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusServiceUnavailable, resp.StatusCode)
+@@ -216,67 +216,67 @@ func TestReadyAndHealthy(t *testing.T) {
+ 	// Set to ready.
+ 	webHandler.Ready()
+ 
+-	resp, err = http.Get("http://localhost:9090/-/healthy")
++	resp, err = http.Get("http://localhost:9099/-/healthy")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+ 
+-	resp, err = http.Get("http://localhost:9090/-/ready")
++	resp, err = http.Get("http://localhost:9099/-/ready")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+ 
+-	resp, err = http.Get("http://localhost:9090/version")
++	resp, err = http.Get("http://localhost:9099/version")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+ 
+-	resp, err = http.Get("http://localhost:9090/graph")
++	resp, err = http.Get("http://localhost:9099/graph")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+ 
+-	resp, err = http.Post("http://localhost:9090/api/v2/admin/tsdb/snapshot", "", strings.NewReader(""))
++	resp, err = http.Post("http://localhost:9099/api/v2/admin/tsdb/snapshot", "", strings.NewReader(""))
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+ 
+-	resp, err = http.Post("http://localhost:9090/api/v2/admin/tsdb/delete_series", "", strings.NewReader("{}"))
++	resp, err = http.Post("http://localhost:9099/api/v2/admin/tsdb/delete_series", "", strings.NewReader("{}"))
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+ 
+-	resp, err = http.Get("http://localhost:9090/alerts")
++	resp, err = http.Get("http://localhost:9099/alerts")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+ 
+-	resp, err = http.Get("http://localhost:9090/flags")
++	resp, err = http.Get("http://localhost:9099/flags")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+ 
+-	resp, err = http.Get("http://localhost:9090/rules")
++	resp, err = http.Get("http://localhost:9099/rules")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+ 
+-	resp, err = http.Get("http://localhost:9090/service-discovery")
++	resp, err = http.Get("http://localhost:9099/service-discovery")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+ 
+-	resp, err = http.Get("http://localhost:9090/targets")
++	resp, err = http.Get("http://localhost:9099/targets")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+ 
+-	resp, err = http.Get("http://localhost:9090/config")
++	resp, err = http.Get("http://localhost:9099/config")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusOK, resp.StatusCode)
+ 
+-	resp, err = http.Get("http://localhost:9090/status")
++	resp, err = http.Get("http://localhost:9099/status")
+ 
+ 	testutil.Ok(t, err)
+ 	testutil.Equals(t, http.StatusOK, resp.StatusCode)

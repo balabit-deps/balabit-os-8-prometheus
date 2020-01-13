@@ -1,0 +1,81 @@
+#!/usr/bin/make -f
+# -*- Mode: makefile -*-
+include /usr/share/dpkg/pkg-info.mk
+
+export DH_VERBOSE=1
+# Include test fixtures.
+export DH_GOLANG_INSTALL_EXTRA := promql/fuzz-data \
+    config/testdata discovery/file/fixtures pkg/rulefmt/testdata \
+    promql/testdata rules/fixtures scrape/testdata
+
+# Do not build examples.
+export DH_GOLANG_EXCLUDES := documentation vendor
+
+BUILDDIR := $(CURDIR)/build
+METAPKG := github.com/prometheus/common
+
+# Taken and modified from the project's Makefile.
+
+BRANCH     := debian/sid
+USER       := pkg-go-maintainers@lists.alioth.debian.org
+BUILD_DATE  = $(shell date --utc --date='@$(SOURCE_DATE_EPOCH)' \
+    +%Y%m%d-%H:%M:%S)
+GO_VERSION  = $(shell go version | sed 's/go version \(\S*\).*/\1/')
+BUILDFLAGS  = -ldflags \
+  " -X $(METAPKG)/version.Version=$(DEB_VERSION_UPSTREAM)\
+    -X $(METAPKG)/version.Revision=$(DEB_VERSION)\
+    -X $(METAPKG)/version.Branch=$(BRANCH)\
+    -X $(METAPKG)/version.BuildUser=$(USER)\
+    -X $(METAPKG)/version.BuildDate=$(BUILD_DATE)\
+    -X $(METAPKG)/version.GoVersion=$(GO_VERSION)"
+
+ifeq ($(DEB_HOST_ARCH_CPU),arm)
+# Tests in armel take way too long, and run out of memory in armhf.
+TESTFLAGS  := -timeout 60m -short
+else
+TESTFLAGS  := -timeout 20m
+endif
+
+%:
+	# stop the service before upgrading, so we can move the v1 database away
+	dh $@ --buildsystem=golang --with=golang --builddirectory=$(BUILDDIR)
+
+WHATIS1 := "prometheus \\- The Prometheus monitoring server"
+WHATIS2 := "promtool \\- Tooling for the Prometheus monitoring system"
+WHATIS3 := "tsdb \\- CLI to the Prometheus TSDB"
+PROMPB := $(CURDIR)/build/src/github.com/prometheus/prometheus/prompb
+
+override_dh_auto_configure:
+	dh_auto_configure -- $(BUILDFLAGS)
+	protoc --gogofast_out=plugins=grpc:$(PROMPB) \
+            -I$(PROMPB) \
+            -I$(BUILDDIR)/src/github.com/gogo/protobuf \
+            -I$(BUILDDIR)/src/github.com/grpc-ecosystem/grpc-gateway/third_party/googleapis \
+            $(PROMPB)/*.proto
+	protoc --grpc-gateway_out=logtostderr=true:$(PROMPB) \
+            -I$(PROMPB) \
+            -I$(BUILDDIR)/src/github.com/gogo/protobuf \
+            -I$(BUILDDIR)/src/github.com/grpc-ecosystem/grpc-gateway/third_party/googleapis \
+            $(PROMPB)/rpc.proto
+
+# Exclude package without non-test files.
+override_dh_auto_build: DH_GOLANG_EXCLUDES += tsdb/test
+override_dh_auto_build:
+	dh_auto_build -- $(BUILDFLAGS)
+	build/bin/prometheus --help-man > build/prometheus.1
+	build/bin/promtool --help-man > build/promtool.1
+	build/bin/tsdb --help-man > build/tsdb.1
+	# Remove build user/build date/go version headers, which is ugly.
+	sed -i -e '/^  /d' build/prometheus.1 build/promtool.1 build/tsdb.1
+	# Fix whatis entry.
+	sed -i '/^.SH "NAME"/,+1c.SH "NAME"\n'$(WHATIS1) build/prometheus.1
+	sed -i '/^.SH "NAME"/,+1c.SH "NAME"\n'$(WHATIS2) build/promtool.1
+	sed -i '/^.SH "NAME"/,+1c.SH "NAME"\n'$(WHATIS3) build/tsdb.1
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	dh_auto_test -- $(TESTFLAGS)
+endif
+
+override_dh_auto_install:
+	dh_auto_install -- --no-source

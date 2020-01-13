@@ -1,0 +1,3 @@
+build/prometheus.1
+build/promtool.1
+build/tsdb.1

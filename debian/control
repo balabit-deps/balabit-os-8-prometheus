@@ -1,0 +1,90 @@
+Source: prometheus
+Maintainer: Debian Go Packaging Team <pkg-go-maintainers@lists.alioth.debian.org>
+Uploaders: Martina Ferrari <tincho@debian.org>,
+           Daniel Swarbrick <daniel.swarbrick@cloud.ionos.com>,
+Section: net
+Testsuite: autopkgtest-pkg-go
+Priority: optional
+Build-Depends: debhelper-compat (= 12),
+               dh-golang (>= 1.39~),
+               gogoprotobuf (>= 1.0.0+git20180330~),
+               golang-github-aws-aws-sdk-go-dev (>= 1.4),
+               golang-github-cespare-xxhash-dev,
+               golang-github-cockroachdb-cmux-dev,
+               golang-github-edsrzf-mmap-go-dev,
+               golang-github-fsnotify-fsnotify-dev (>= 1.4.7-2~),
+               golang-github-go-kit-kit-dev,
+               golang-github-gogo-protobuf-dev (>= 1.0.0+git20180330~),
+               golang-github-golang-snappy-dev,
+               golang-github-google-pprof-dev,
+               golang-github-gophercloud-gophercloud-dev (>= 0.3.0~),
+               golang-github-grpc-ecosystem-grpc-gateway-dev,
+               golang-github-hashicorp-consul-dev (>= 1.1.0~),
+               golang-github-json-iterator-go-dev,
+               golang-github-miekg-dns-dev (>= 0.0~git20170501),
+               golang-github-mwitkow-go-conntrack-dev,
+               golang-github-oklog-ulid-dev (>= 1.3.1~),
+               golang-github-opentracing-contrib-go-stdlib-dev (>= 0.0~git20190519.cf7a6c9~),
+               golang-github-opentracing-opentracing-go-dev,
+               golang-github-pkg-errors-dev,
+               golang-github-prometheus-alertmanager-dev (>= 0.18.0~),
+               golang-github-prometheus-client-golang-dev (>= 1.2.1~),
+               golang-github-prometheus-client-model-dev,
+               golang-github-prometheus-common-dev (>= 0.7.0~),
+               golang-github-samuel-go-zookeeper-dev,
+               golang-go (>= 2:1.10~),
+               golang-golang-x-net-dev (>= 1:0.0+git20180124),
+               golang-golang-x-oauth2-google-dev,
+               golang-golang-x-sync-dev,
+               golang-golang-x-sys-dev,
+               golang-golang-x-time-dev,
+               golang-google-api-dev (>= 0.0~git20170907),
+               golang-google-genproto-dev (>= 0.0~git20171123),
+               golang-google-grpc-dev (>= 1.6.0~),
+               golang-gopkg-alecthomas-kingpin.v2-dev,
+               golang-gopkg-yaml.v2-dev (>= 2.2.1-1~),
+               golang-grpc-gateway,
+               po-debconf,
+Standards-Version: 4.4.1
+Vcs-Browser: https://salsa.debian.org/go-team/packages/prometheus
+Vcs-Git: https://salsa.debian.org/go-team/packages/prometheus.git
+Homepage: https://prometheus.io/
+XS-Go-Import-Path: github.com/prometheus/prometheus
+
+Package: prometheus
+Architecture: any
+Pre-Depends: ${misc:Pre-Depends}
+Depends: adduser,
+         daemon | systemd-sysv,
+         fonts-glyphicons-halflings,
+         libjs-bootstrap4,
+         libjs-eonasdan-bootstrap-datetimepicker,
+         libjs-jquery (>= 1.11.3~),
+         libjs-jquery-hotkeys,
+         libjs-moment,
+         libjs-moment-timezone,
+         libjs-mustache (>= 2.3.0-1~),
+         libjs-popper.js,
+         libjs-rickshaw,
+         ${misc:Depends},
+         ${shlibs:Depends},
+Recommends: prometheus-node-exporter,
+Built-Using: ${misc:Built-Using},
+Description: Monitoring system and time series database
+ Prometheus is a systems and services monitoring system. It collects metrics
+ from configured targets at given intervals, evaluates rule expressions,
+ displays the results, and can trigger alerts if some condition is observed to
+ be true.
+ .
+ Prometheus' main distinguishing features as compared to other monitoring
+ systems are:
+ .
+  * A multi-dimensional data model (timeseries defined by metric name and set
+    of key/value dimensions).
+  * A flexible query language to leverage this dimensionality.
+  * No dependency on distributed storage; single server nodes are autonomous.
+  * Timeseries collection happens via a pull model over HTTP.
+  * Pushing timeseries is supported via an intermediary gateway.
+  * Targets are discovered via service discovery or static configuration.
+  * Multiple modes of graphing and dashboarding support.
+  * Federation support coming soon.
